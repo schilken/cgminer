@@ -1015,6 +1015,9 @@ extern float opt_compac_freq;
 extern int opt_au3_volt;
 extern float opt_rock_freq;
 #endif
+#ifdef USE_LOTTERY
+extern int opt_lucky_number;
+#endif
 extern bool opt_worktime;
 #ifdef USE_AVALON
 extern char *opt_avalon_options;

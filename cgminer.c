@@ -243,6 +243,11 @@ float opt_compac_freq = 150;
 int opt_au3_volt = 775;
 float opt_rock_freq = 270;
 #endif
+
+#ifdef USE_LOTTERY
+int opt_lucky_number = 777;
+#endif
+
 bool opt_worktime;
 #ifdef USE_AVALON
 char *opt_avalon_options;
@@ -1293,6 +1298,12 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITH_ARG("--au3-volt",
 		     set_int_0_to_9999, &opt_show_intval, &opt_au3_volt,
 		     "Set AntminerU3 voltage in mv, range 725-850, 0 to not set"),
+#endif
+#ifdef USE_LOTTERY
+OPT_WITH_ARG("--lucky_number",
+		     set_int_1_to_65535, opt_show_intval, &opt_lucky_number,
+		     "Lucky number for lottery"),
+
 #endif
 #ifdef USE_AVALON
 	OPT_WITHOUT_ARG("--avalon-auto",
@@ -3116,8 +3127,10 @@ double tsince_update(void)
 static void get_statline(char *buf, size_t bufsiz, struct cgpu_info *cgpu)
 {
 	char displayed_hashes[16], displayed_rolling[16];
+    char displayed_total_hash_count[16];
 	double dev_runtime, wu;
 	uint64_t dh64, dr64;
+    uint64_t total_hashcount = cgpu->total_mhashes * 1000000ull;
 
 	dev_runtime = cgpu_runtime(cgpu);
 
@@ -3127,17 +3140,20 @@ static void get_statline(char *buf, size_t bufsiz, struct cgpu_info *cgpu)
 	dr64 = (double)cgpu->rolling * 1000000ull;
 	suffix_string(dh64, displayed_hashes, sizeof(displayed_hashes), 4);
 	suffix_string(dr64, displayed_rolling, sizeof(displayed_rolling), 4);
+    suffix_string(total_hashcount, displayed_total_hash_count, sizeof(displayed_total_hash_count), 4);
 
 	snprintf(buf, bufsiz, "%s %d ", cgpu->drv->name, cgpu->device_id);
 	cgpu->drv->get_statline_before(buf, bufsiz, cgpu);
-	tailsprintf(buf, bufsiz, "(%ds):%s (avg):%sh/s | A:%.0f R:%.0f HW:%d WU:%.1f/m",
+	tailsprintf(buf, bufsiz, "(%ds):%s (avg):%sh/s | A:%.0f R:%.0f HW:%d WU:%.1f/m, Total H:%s",
 		opt_log_interval,
 		displayed_rolling,
 		displayed_hashes,
 		cgpu->diff_accepted,
 		cgpu->diff_rejected,
 		cgpu->hw_errors,
-		wu);
+		wu,
+        displayed_total_hash_count
+    );
 	cgpu->drv->get_statline(buf, bufsiz, cgpu);
 }
 
@@ -3231,6 +3247,7 @@ static void curses_print_devstatus(struct cgpu_info *cgpu, int devno, int count)
 	struct timeval now;
 	double dev_runtime, wu;
 	unsigned int devstatlen;
+    uint64_t total_hashcount = cgpu->total_mhashes * 1000000ull;
 
 	if (opt_compact)
 		return;
@@ -3287,23 +3304,29 @@ static void curses_print_devstatus(struct cgpu_info *cgpu, int devno, int count)
 		cg_wprintw(statuswin, "REST  ");
 	else if (opt_widescreen) {
 		char displayed_hashes[16], displayed_rolling[16];
-		uint64_t d64;
+        char displayed_total_hash_count[16];
+
+        uint64_t d64;
 
 		d64 = (double)cgpu->total_mhashes / dev_runtime * 1000000ull;
 		suffix_string(d64, displayed_hashes, sizeof(displayed_hashes), 4);
 		d64 = (double)cgpu->rolling * 1000000ull;
 		suffix_string(d64, displayed_rolling, sizeof(displayed_rolling), 4);
-		adj_width(wu, &wuwidth);
+        suffix_string(total_hashcount, displayed_total_hash_count, sizeof(displayed_total_hash_count), 4);
+
+        adj_width(wu, &wuwidth);
 		adj_fwidth(cgpu->diff_accepted, &dawidth);
 		adj_fwidth(cgpu->diff_rejected, &drwidth);
 		adj_width(cgpu->hw_errors, &hwwidth);
 		cg_wprintw(statuswin, "%6s / %6sh/s WU:%*.1f/m "
-				"A:%*.0f R:%*.0f HW:%*d",
+				"A:%*.0f R:%*.0f HW:%*d, Total H:%s",
 				displayed_rolling,
 				displayed_hashes, wuwidth + 2, wu,
 				dawidth, cgpu->diff_accepted,
 				drwidth, cgpu->diff_rejected,
-				hwwidth, cgpu->hw_errors);
+				hwwidth, cgpu->hw_errors,
+                   displayed_total_hash_count
+        );
 	} else if (!alt_status) {
 		char displayed_hashes[16], displayed_rolling[16];
 		uint64_t d64;
@@ -7317,7 +7340,12 @@ static void gen_stratum_work(struct pool *pool, struct work *work)
 	 * from left to right and prevent overflow errors with small n2sizes */
 	nonce2le = htole64(pool->nonce2);
 	cg_memcpy(pool->coinbase + pool->nonce2_offset, &nonce2le, pool->n2size);
-	work->nonce2 = pool->nonce2++;
+#ifdef USE_LOTTERY
+    work->nonce2 = pool->nonce2;
+    pool->nonce2 += opt_lucky_number;
+#else
+    work->nonce2 = pool->nonce2++;
+#endif
 	work->nonce2_len = pool->n2size;
 
 	/* Downgrade to a read lock to read off the pool variables */
@@ -7356,11 +7384,13 @@ static void gen_stratum_work(struct pool *pool, struct work *work)
 		merkle_hash = bin2hex((const unsigned char *)merkle_root, 32);
 		applog(LOG_DEBUG, "Generated stratum merkle %s", merkle_hash);
 		applog(LOG_DEBUG, "Generated stratum header %s", header);
-		applog(LOG_DEBUG, "Work job_id %s nonce2 %"PRIu64" ntime %s", work->job_id,
-		       work->nonce2, work->ntime);
 		free(header);
 		free(merkle_hash);
 	}
+    if(local_work % 100 == 0){
+        applog(LOG_NOTICE, "%d: Work job_id %s nonce2 %"PRIu64" ntime %s", local_work, work->job_id,
+           work->nonce2, work->ntime);
+    }
 
 	calc_midstate(work);
 	set_target(work->target, work->sdiff);
