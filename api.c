@@ -2044,6 +2044,7 @@ static void ascstatus(struct io_data *io_data, int asc, bool isjson, bool precom
 		root = api_add_time(root, "Last Share Time", &(cgpu->last_share_pool_time), false);
 		root = api_add_mhtotal(root, "Total MH", &(cgpu->total_mhashes), false);
 		root = api_add_uint32(root, "Lucky Number", &opt_lucky_number, false);
+        root = api_add_bool(root, "Random nonce2", &opt_random_nonce2, false);
 		root = api_add_int64(root, "Diff1 Work", &(cgpu->diff1), false);
 		root = api_add_diff(root, "Difficulty Accepted", &(cgpu->diff_accepted), false);
 		root = api_add_diff(root, "Difficulty Rejected", &(cgpu->diff_rejected), false);

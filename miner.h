@@ -1017,6 +1017,7 @@ extern float opt_rock_freq;
 #endif
 #ifdef USE_LOTTERY
 extern int opt_lucky_number;
+extern bool opt_random_nonce2;
 #endif
 extern bool opt_worktime;
 #ifdef USE_AVALON

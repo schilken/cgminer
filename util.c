@@ -3362,3 +3362,21 @@ void _cg_memcpy(void *dest, const void *src, unsigned int n, const char *file, c
 	}
 	memcpy(dest, src, n);
 }
+
+uint64_t readTrueRandom() {
+    union
+    {
+        uint64_t int_value;
+        uint8_t bytes[8];
+    } converter;
+    FILE *fptr;
+
+//    ptr = fopen("test.bin","rb");
+	fptr = fopen("/dev/hwrng", "rb");
+	if(!fptr){
+		early_quit(1, "can't read /dev/hwrng");
+	}
+    fread(converter.bytes,sizeof(converter.bytes),1,fptr);
+	fclose(fptr);
+    return converter.int_value;
+}

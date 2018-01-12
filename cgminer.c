@@ -246,6 +246,7 @@ float opt_rock_freq = 270;
 
 #ifdef USE_LOTTERY
 int opt_lucky_number = 777;
+bool opt_random_nonce2 = false;
 #endif
 
 bool opt_worktime;
@@ -1300,9 +1301,12 @@ static struct opt_table opt_config_table[] = {
 		     "Set AntminerU3 voltage in mv, range 725-850, 0 to not set"),
 #endif
 #ifdef USE_LOTTERY
-OPT_WITH_ARG("--lucky_number",
+    OPT_WITH_ARG("--lucky-number",
 		     set_int_1_to_65535, opt_show_intval, &opt_lucky_number,
 		     "Lucky number for lottery"),
+    OPT_WITHOUT_ARG("--random-nonce2",
+                 opt_set_bool, &opt_random_nonce2,
+                 "random nonce2 for lottery if true"),
 
 #endif
 #ifdef USE_AVALON
@@ -7336,17 +7340,23 @@ static void gen_stratum_work(struct pool *pool, struct work *work)
 
 	cg_wlock(&pool->data_lock);
 
-	/* Update coinbase. Always use an LE encoded nonce2 to fill in values
-	 * from left to right and prevent overflow errors with small n2sizes */
-	nonce2le = htole64(pool->nonce2);
-	cg_memcpy(pool->coinbase + pool->nonce2_offset, &nonce2le, pool->n2size);
 #ifdef USE_LOTTERY
-    work->nonce2 = pool->nonce2;
-    pool->nonce2 += opt_lucky_number;
+    if(opt_random_nonce2) {
+        work->nonce2 = readTrueRandom();
+        pool->nonce2 = work->nonce2;
+    } else {
+        work->nonce2 = pool->nonce2;
+        pool->nonce2 += opt_lucky_number;
+    }
 #else
     work->nonce2 = pool->nonce2++;
 #endif
 	work->nonce2_len = pool->n2size;
+
+    /* Update coinbase. Always use an LE encoded nonce2 to fill in values
+     * from left to right and prevent overflow errors with small n2sizes */
+    nonce2le = htole64(pool->nonce2);
+    cg_memcpy(pool->coinbase + pool->nonce2_offset, &nonce2le, pool->n2size);
 
 	/* Downgrade to a read lock to read off the pool variables */
 	cg_dwlock(&pool->data_lock);
